@@ -1,0 +1,83 @@
+.include "lib.inc"
+
+namespace ns
+	class exposed
+		;;we need to make sure our delegates and generated types dont get unloaded so we add them to this list
+		private delegates, @Arraylist
+		public method exposed
+		record
+			delegateProxy, @DelegateProxy
+			proxy, @Proxy
+			binding, @BasicHttpBinding
+			buf, a10
+		proc
+			delegates = new ArrayList()
+			delegateProxy = new DelegateProxy()
+			
+			open(1,o,'tt:')
+			
+			try
+			begin
+			;;.net doesnt know how to create delegates from synergy methods so we have a callback that
+			;;generates from the method name and passes back the result
+			addhandler(delegateProxy.BindDelegate, this.bind)
+			proxy = delegateProxy.BuildProxy("<component><interface name='senTest'><method name='function_one'><methodresult type='System.String'/><param name='p1' type='System.String'/></method></interface></component>")
+			
+			;;In this binding you can choose between no security(http) and transport level security(https)
+			;;other bindings have varing levels of support out in the wild, this one happens to be good for 
+			;;regular .net clients, silverlight, flash, and anyone who supports SOAP 1.1
+			binding = new BasicHttpBinding(BasicHttpSecurityMode.None)
+			
+			;;the address we pass in here is the one we are actualy listening to
+			;;for example if your IP is 192.168.1.1 and you want other people on your local
+			;;network to see your service you would put that instead of localhost
+			;;since this is a URI you can also specify the port you want ex(http://localhost:8090/service)
+			;;if you have another application using port 80 on your machine 
+			;;you will need to specify an alternate port
+			
+			proxy.Run((System.ServiceModel.Channels.Binding)binding, "http://localhost/service")
+			
+			reads(1, buf)
+				
+			end
+			
+			catch( ex, @DotNetException)
+				writes(1, (string)ex.NativeException.Call("ToString"))
+			endtry	
+			close(1)
+		endmethod
+		public method bind, @object
+			name, @string
+			delegateType, @string
+			delegateDefinedIn, @string
+		record
+			ret, @DotNetDelegate
+			dna, @DotNetAssembly
+		proc
+			;;this load the passed in assembly from disk(workaround to a known issue)
+			;;in a future patch the assembly should be passed instead of the file path to the assembly
+			dna = new DotNetAssembly(delegateDefinedIn)
+			ret = new DotNetDelegate(dna, delegateType, this, name)
+		
+			;;we have to keep these around even though it looks(to synergy) like they 
+			;;arent being used anymore, in a future patch these two lines wont be needed
+			delegates.Add(ret)
+			delegates.Add(dna)
+			mreturn ret
+		endmethod
+		
+		;;this is the method we specified in the xml, so this 
+		;;is the method exposed to the world
+		public method function_one, string
+			p1, @string
+		proc
+			writes(1, p1)
+			mreturn p1 + " something"
+		endmethod
+	endclass
+endnamespace
+
+main
+proc
+	new exposed()
+endmain
